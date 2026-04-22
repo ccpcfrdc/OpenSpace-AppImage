@@ -409,7 +409,7 @@ jobs:
         name: OpenSpace-MacOS15-AppleSilicon-minimal
         # optional, default is artifact
         # A file, directory or wildcard pattern that describes what to upload
-        path: env.MINZIP_FILE
+        path: ${{ env.MINZIP_FILE }}
 
     - name: Upload .app to GitHub Release
       continue-on-error: true
