@@ -1,0 +1,24 @@
+diff --git a/modules/globebrowsing/src/renderableglobe.cpp b/modules/globebrowsing/src/renderableglobe.cpp
+index xxxx..xxxx 100644
+--- a/modules/globebrowsing/src/renderableglobe.cpp
++++ b/modules/globebrowsing/src/renderableglobe.cpp
+@@ around line 954
+-            if (_lastChangedLayer) {
+-                _lastChangedLayer->setEnabled(false);
+-            }
++            if (_lastChangedLayer) {
++                _lastChangedLayer->setEnabled(false);
++            }
++            else {
++                bool disabled = false;
++                for (LayerGroup* lg : _layerManager.layerGroups()) {
++                    if (disabled || lg->isHeightLayer()) {
++                        continue;
++                    }
++                    for (Layer* l : lg->activeLayers()) {
++                        l->setEnabled(false);
++                        disabled = true;
++                        break;
++                    }
++                }
++            }

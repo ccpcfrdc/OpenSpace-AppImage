@@ -1,0 +1,22 @@
+diff --git a/modules/atmosphere/shaders/atmosphere_deferred_fs.glsl b/modules/atmosphere/shaders/atmosphere_deferred_fs.glsl
+index xxxx..xxxx 100644
+--- a/modules/atmosphere/shaders/atmosphere_deferred_fs.glsl
++++ b/modules/atmosphere/shaders/atmosphere_deferred_fs.glsl
+@@ around line 196
+-  float u_r = (r - rPlanet) / (rAtmosphere - rPlanet);
+-  float u_muSun = (muSun + 0.2) / 1.2;
++  float u_r = clamp((r - rPlanet) / (rAtmosphere - rPlanet), 0.0, 1.0);
++  float u_muSun = clamp((muSun + 0.2) / 1.2, 0.0, 1.0);
+@@ around line 247
+-  double q = sqrt(r2 - m2);
++  float q = sqrt(max(0.0, r2 - m2));
+
+diff --git a/modules/atmosphere/shaders/delta_j_calc_fs.glsl b/modules/atmosphere/shaders/delta_j_calc_fs.glsl
+index xxxx..xxxx 100644
+--- a/modules/atmosphere/shaders/delta_j_calc_fs.glsl
++++ b/modules/atmosphere/shaders/delta_j_calc_fs.glsl
+@@ around line 66
+-  float u_muSun = (muSun + 0.2) / 1.2;
+-  float u_r = (r - rPlanet) / (rAtmosphere - rPlanet);
++  float u_muSun = clamp((muSun + 0.2) / 1.2, 0.0, 1.0);
++  float u_r = clamp((r - rPlanet) / (rAtmosphere - rPlanet), 0.0, 1.0);
