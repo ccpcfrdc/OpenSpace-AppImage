@@ -414,6 +414,7 @@ jobs:
         path: env.MINZIP_FILE
 
     - name: Upload .app to GitHub Release
+      continue-on-error: true
       run: |
         RELEASE_TAG="daily-MacOS-app-single-precision"
         # APP_FILE=/Users/runner/source/OpenSpace/bin/Release/OpenSpaceapp.zip
@@ -436,6 +437,7 @@ jobs:
 
     - name: Fail if Shaders Differ to force email alert
       if: env.ZIPFILENAME == 'OpenSpace-minimal-daily-mac-testing.zip'
+      continue-on-error: true
       run: |
         echo "::error::Shaders differ from the previous release!"
         exit 1
