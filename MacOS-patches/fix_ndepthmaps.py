@@ -155,11 +155,15 @@ pc_fix_old = (
     '    fullColor *= texture(spriteTexture, vec3(texCoord, layer));\n'
     '  }'
 )
+# Discard near-black OR transparent pixels:
+# - alpha < 0.1: catches PNGs with transparent backgrounds (even with non-black RGB)
+# - luminance < 0.05: catches black-background PNGs (including slightly grey JPEG artifacts)
+# Using OR so either condition alone is sufficient.
 pc_fix_new = (
     '  vec4 textureColor = vec4(1.0);\n'
     '  if (hasSpriteTexture) {\n'
     '    textureColor = texture(spriteTexture, vec3(texCoord, layer));\n'
-    '    if (dot(textureColor.rgb, vec3(0.333)) < 0.005) discard;\n'
+    '    if (textureColor.a < 0.1 || dot(textureColor.rgb, vec3(0.333)) < 0.05) discard;\n'
     '    fullColor *= textureColor;\n'
     '  }'
 )
@@ -174,3 +178,29 @@ if os.path.exists(pc_file):
         print('SKIP (not found or already fixed): pointcloud black border discard')
 else:
     print('NOT FOUND: ' + pc_file)
+
+# Fix 7: Clamp UV coordinates in transmittance LUT lookups in atmosphere_common.glsl.
+# On Metal, texture sampling with out-of-range UVs (e.g. u_mu ≈ -0.985 for mu=-1) may
+# not clamp to edge — it can wrap or return wrong values depending on sampler state.
+# Explicit clamp(uv, 0.0, 1.0) guarantees correct edge behavior on all backends.
+atm_common_clamp_file = 'modules/atmosphere/shaders/atmosphere_common.glsl'
+atm_common_clamp_fixes = [
+    # 4-argument transmittance(): atan-based u_mu can be slightly outside [0,1]
+    ('  return texture(tex, vec2(u_mu, u_r)).rgb;\n}',
+     '  return texture(tex, clamp(vec2(u_mu, u_r), 0.0, 1.0)).rgb;\n}'),
+]
+
+if os.path.exists(atm_common_clamp_file):
+    content = open(atm_common_clamp_file).read()
+    changed = False
+    for old, new in atm_common_clamp_fixes:
+        if old in content:
+            content = content.replace(old, new)
+            print('FIXED transmittance UV clamp in ' + atm_common_clamp_file)
+            changed = True
+        else:
+            print('SKIP (not found or already fixed): transmittance UV clamp')
+    if changed:
+        open(atm_common_clamp_file, 'w').write(content)
+else:
+    print('NOT FOUND: ' + atm_common_clamp_file)
