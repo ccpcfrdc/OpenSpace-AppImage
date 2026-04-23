@@ -51,19 +51,12 @@ jobs:
         cd "$openSpaceHome"
         python3 smart_patcher.py MacOS-patches.txt        
         
-    - name: apply layers fix and depthmaps fix
+    - name: apply layers fix
       run: |
         openSpaceHome="$HOME/source/OpenSpace"
         cp -v MacOS-patches/layers-fix.txt "$openSpaceHome/layers-fix.txt"
         cd "$openSpaceHome"
         python3 smart_patcher.py layers-fix.txt
-        # Fix #{nDepthMaps} template not resolved on macOS Metal - use sed for reliability
-        for f in modules/globebrowsing/shaders/globalrenderer_vs.glsl \
-                  modules/globebrowsing/shaders/localrenderer_vs.glsl \
-                  modules/globebrowsing/shaders/renderer_fs.glsl; do
-          sed -i '' 's/#define nDepthMaps #{nDepthMaps}/#define nDepthMaps 0/g' "$f"
-          echo "Fixed nDepthMaps in $f"
-        done
 
     - name: get the single precision patches
       # https://docs.openspaceproject.com/releases-v0.20/contribute/development/compiling/macos.html
@@ -89,7 +82,13 @@ jobs:
         echo "Running smart_patcher for shader edits..."
         #python smart_patcher.py changes-to-shaders.diff
         python smart_patcher.py changes-to-shadersv2.diff
-        
+        # Force-fix #{nDepthMaps} - must run last as single-precision patches may not handle it
+        for f in modules/globebrowsing/shaders/globalrenderer_vs.glsl \
+                  modules/globebrowsing/shaders/localrenderer_vs.glsl \
+                  modules/globebrowsing/shaders/renderer_fs.glsl; do
+          sed -i '' 's/#define nDepthMaps #{nDepthMaps}/#define nDepthMaps 0/g' "$f" && \
+          echo "Fixed nDepthMaps in $f" || echo "Pattern not found in $f (may already be fixed)"
+        done
 
     - name: Update Homebrew and Install GLM
       run: |
