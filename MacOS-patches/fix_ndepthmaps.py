@@ -66,3 +66,37 @@ if os.path.exists(atm_file):
         open(atm_file, 'w').write(content)
 else:
     print('NOT FOUND: ' + atm_file)
+
+# Fix 3: NaN guards in atmosphere_common.glsl (included by atmosphere_deferred_fs.glsl).
+# These functions are called per-pixel at runtime; float precision makes sqrt args go
+# slightly negative when surface fragment r0 ≈ Rg, producing NaN → blue flicker.
+atm_common_file = 'modules/atmosphere/shaders/atmosphere_common.glsl'
+atm_common_fixes = [
+    # texture4D: most critical — surface fragment r0 can compute as r0 < Rg in float
+    ('float rho = sqrt(r2 - Rg2);',
+     'float rho = sqrt(max(0.0, r2 - Rg2));'),
+    # texture4D: delta + cst.y can be tiny-negative near tangent rays in float
+    ('sqrt(delta + cst.y)',
+     'sqrt(max(0.0, delta + cst.y))'),
+    # transmittance LUT lookup: u_r NaN when r < Rg in float
+    ('float u_r = sqrt((r - Rg) / (Rt - Rg));',
+     'float u_r = sqrt(max(0.0, (r - Rg) / (Rt - Rg)));'),
+    # transmittance along ray: cosine-law distance, tiny-negative with float rounding
+    ('float ri = sqrt(d * d + r * r + 2.0 * r * d * mu);',
+     'float ri = sqrt(max(0.0, d * d + r * r + 2.0 * r * d * mu));'),
+]
+
+if os.path.exists(atm_common_file):
+    content = open(atm_common_file).read()
+    changed = False
+    for old, new in atm_common_fixes:
+        if old in content:
+            content = content.replace(old, new)
+            print('FIXED atm_common NaN guard [' + old[:50] + '...] in ' + atm_common_file)
+            changed = True
+        else:
+            print('SKIP (not found or already fixed): ' + old[:50])
+    if changed:
+        open(atm_common_file, 'w').write(content)
+else:
+    print('NOT FOUND: ' + atm_common_file)
