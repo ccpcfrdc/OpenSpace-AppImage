@@ -1,0 +1,23 @@
+diff --git a/modules/globebrowsing/shaders/globalrenderer_vs.glsl b/modules/globebrowsing/shaders/globalrenderer_vs.glsl
+index xxxx..xxxx 100644
+--- a/modules/globebrowsing/shaders/globalrenderer_vs.glsl
++++ b/modules/globebrowsing/shaders/globalrenderer_vs.glsl
+@@ around line 33
+-#define nDepthMaps #{nDepthMaps}
++#define nDepthMaps 0
+
+diff --git a/modules/globebrowsing/shaders/localrenderer_vs.glsl b/modules/globebrowsing/shaders/localrenderer_vs.glsl
+index xxxx..xxxx 100644
+--- a/modules/globebrowsing/shaders/localrenderer_vs.glsl
++++ b/modules/globebrowsing/shaders/localrenderer_vs.glsl
+@@ around line 33
+-#define nDepthMaps #{nDepthMaps}
++#define nDepthMaps 0
+
+diff --git a/modules/globebrowsing/shaders/renderer_fs.glsl b/modules/globebrowsing/shaders/renderer_fs.glsl
+index xxxx..xxxx 100644
+--- a/modules/globebrowsing/shaders/renderer_fs.glsl
++++ b/modules/globebrowsing/shaders/renderer_fs.glsl
+@@ around line 32
+-#define nDepthMaps #{nDepthMaps}
++#define nDepthMaps 0

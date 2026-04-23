@@ -51,12 +51,14 @@ jobs:
         cd "$openSpaceHome"
         python3 smart_patcher.py MacOS-patches.txt        
         
-    - name: apply layers fix
+    - name: apply layers fix and depthmaps fix
       run: |
         openSpaceHome="$HOME/source/OpenSpace"
         cp -v MacOS-patches/layers-fix.txt "$openSpaceHome/layers-fix.txt"
+        cp -v MacOS-patches/depthmaps-fix.txt "$openSpaceHome/depthmaps-fix.txt"
         cd "$openSpaceHome"
         python3 smart_patcher.py layers-fix.txt
+        python3 smart_patcher.py depthmaps-fix.txt
 
     - name: get the single precision patches
       # https://docs.openspaceproject.com/releases-v0.20/contribute/development/compiling/macos.html
