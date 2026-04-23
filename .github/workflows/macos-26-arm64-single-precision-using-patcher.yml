@@ -83,8 +83,10 @@ jobs:
         #python smart_patcher.py changes-to-shaders.diff
         python smart_patcher.py changes-to-shadersv2.diff
         # Force-fix #{nDepthMaps} - must run last as single-precision patches may not handle it
+        echo "=== Running fix_ndepthmaps.py ==="
         cp -v $GITHUB_WORKSPACE/MacOS-patches/fix_ndepthmaps.py .
         python fix_ndepthmaps.py
+        echo "=== fix_ndepthmaps.py done ==="
 
     - name: Update Homebrew and Install GLM
       run: |
