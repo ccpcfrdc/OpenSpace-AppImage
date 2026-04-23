@@ -107,16 +107,17 @@ else:
 # Discarding pixels whose luminance < 0.005 removes the border without affecting visible content.
 pc_file = 'modules/base/shaders/pointcloud/pointcloud_fs.glsl'
 pc_fix_old = (
+    '  vec4 textureColor = vec4(1.0);\n'
     '  if (hasSpriteTexture) {\n'
-    '    vec4 texColor = texture(spriteTexture, vec3(in_data.texCoords, in_data.textureLayer));\n'
-    '    fullColor *= useTextureAlpha ? texColor : vec4(texColor.rgb, 1.0);\n'
+    '    fullColor *= texture(spriteTexture, vec3(texCoord, layer));\n'
     '  }'
 )
 pc_fix_new = (
+    '  vec4 textureColor = vec4(1.0);\n'
     '  if (hasSpriteTexture) {\n'
-    '    vec4 texColor = texture(spriteTexture, vec3(in_data.texCoords, in_data.textureLayer));\n'
-    '    if (dot(texColor.rgb, vec3(0.333)) < 0.005) discard;\n'
-    '    fullColor *= useTextureAlpha ? texColor : vec4(texColor.rgb, 1.0);\n'
+    '    textureColor = texture(spriteTexture, vec3(texCoord, layer));\n'
+    '    if (dot(textureColor.rgb, vec3(0.333)) < 0.005) discard;\n'
+    '    fullColor *= textureColor;\n'
     '  }'
 )
 
