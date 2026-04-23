@@ -101,6 +101,49 @@ if os.path.exists(atm_common_file):
 else:
     print('NOT FOUND: ' + atm_common_file)
 
+# Fix 5: Clamp exp argument in opticalDepth to prevent float32 overflow → infinity.
+# exp(a01sq.x) where a01sq.x can reach ~375 for Earth surface geometry; float32 max
+# exp is ~exp(88). exp(375) → infinity → analyticTransmittance → 0 → full inscattering
+# → blue flicker over Earth surface. Clamping to 85.0 keeps result finite.
+atm_exp_file = 'modules/atmosphere/shaders/atmosphere_deferred_fs.glsl'
+atm_exp_old = '  float x = a01s.y > a01s.x ? exp(a01sq.x) : 0.0;'
+atm_exp_new = '  float x = a01s.y > a01s.x ? exp(min(a01sq.x, 85.0)) : 0.0;'
+
+if os.path.exists(atm_exp_file):
+    content = open(atm_exp_file).read()
+    if atm_exp_old in content:
+        content = content.replace(atm_exp_old, atm_exp_new)
+        open(atm_exp_file, 'w').write(content)
+        print('FIXED opticalDepth exp overflow guard in ' + atm_exp_file)
+    else:
+        print('SKIP (not found or already fixed): opticalDepth exp overflow guard')
+else:
+    print('NOT FOUND: ' + atm_exp_file)
+
+# Fix 6: NaN safety net at atmosphere output — any remaining NaN falls back to G-buffer color.
+# NaN != NaN in GLSL, so (c != c) detects NaN components. This catches any NaN source
+# not covered by individual guards above.
+atm_out_old = (
+    '  vec3 c = mix(color.rgb, inscatterColor + atmColor, opacity);\n'
+    '  renderTarget = vec4(c, 1.0);'
+)
+atm_out_new = (
+    '  vec3 c = mix(color.rgb, inscatterColor + atmColor, opacity);\n'
+    '  if (c.r != c.r || c.g != c.g || c.b != c.b) c = color.rgb;\n'
+    '  renderTarget = vec4(c, 1.0);'
+)
+
+if os.path.exists(atm_exp_file):
+    content = open(atm_exp_file).read()
+    if atm_out_old in content:
+        content = content.replace(atm_out_old, atm_out_new)
+        open(atm_exp_file, 'w').write(content)
+        print('FIXED atmosphere NaN output guard in ' + atm_exp_file)
+    else:
+        print('SKIP (not found or already fixed): atmosphere NaN output guard')
+else:
+    print('NOT FOUND: ' + atm_exp_file)
+
 # Fix 4: Discard near-black pixels in pointcloud sprite texture sampling.
 # On Apple Silicon (Metal backend), additive blending via glBlendFunc(GL_SRC_ALPHA, GL_ONE)
 # does not suppress black texels — black borders appear around galaxy images (e.g. Tully).
