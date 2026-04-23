@@ -232,3 +232,56 @@ if os.path.exists(atm_common_clamp_file):
         print('SKIP (not found or already fixed): texture4D u_mu singularity clamp')
 else:
     print('NOT FOUND: ' + atm_common_clamp_file)
+
+# Fix 9: NaN guards in precomputed LUT shaders (delta_j, transmittance, inscattering).
+# These shaders run once at startup to bake atmosphere LUT textures. On Metal,
+# sqrt(negative) may return 0 instead of NaN — baking wrong finite values into the
+# LUT, which then produce wrong inscattering/transmittance at runtime → blue flicker.
+# Fix 6 (NaN output guard) cannot catch finite wrong values; fix them at the source.
+lut_fixes = [
+    ('modules/atmosphere/shaders/delta_j_calc_fs.glsl', [
+        # sinThetaSinSigma: mu*mu or muSun*muSun slightly > 1 in float32
+        ('float sinThetaSinSigma = sqrt(1.0 - mu2) * sqrt(1.0 - muSun2);',
+         'float sinThetaSinSigma = sqrt(max(0.0, 1.0 - mu2)) * sqrt(max(0.0, 1.0 - muSun2));'),
+        # view direction vector: same mu2 issue
+        ('vec3 v = vec3(sqrt(1.0 - mu2), 0.0, mu);',
+         'vec3 v = vec3(sqrt(max(0.0, 1.0 - mu2)), 0.0, mu);'),
+        # distanceToGround: r2*(cosineTheta2-1)+rPlanet2 can be negative near surface
+        ('distanceToGround = -r * cosineTheta - sqrt(r2 * (cosineTheta2 - 1.0) + rPlanet2);',
+         'distanceToGround = -r * cosineTheta - sqrt(max(0.0, r2 * (cosineTheta2 - 1.0) + rPlanet2));'),
+    ]),
+    ('modules/atmosphere/shaders/transmittance_calc_fs.glsl', [
+        # cosZenithHorizon: r < rPlanet in float32 makes arg negative
+        ('float cosZenithHorizon = -sqrt(1.0 - ((rPlanet * rPlanet) / r2));',
+         'float cosZenithHorizon = -sqrt(max(0.0, 1.0 - ((rPlanet * rPlanet) / r2)));'),
+        # y_ii: ray going underground when mu < 0 makes cosine-law arg negative
+        ('float y_ii = exp(-(sqrt(r2 + x_i * x_i + 2.0 * x_i * r * mu) - rPlanet) / H);',
+         'float y_ii = exp(-(sqrt(max(0.0, r2 + x_i * x_i + 2.0 * x_i * r * mu)) - rPlanet) / H);'),
+    ]),
+    ('modules/atmosphere/shaders/inscattering_calc_fs.glsl', [
+        # muSun_i horizon check: ri ≈ rPlanet makes 1-rPlanet²/ri² tiny-negative
+        ('if (muSun_i >= -sqrt(1.0 - rPlanet * rPlanet / (ri * ri))) {',
+         'if (muSun_i >= -sqrt(max(0.0, 1.0 - rPlanet * rPlanet / (ri * ri)))) {'),
+    ]),
+    ('modules/atmosphere/shaders/inscattering_sup_calc_fs.glsl', [
+        # r_i: cosine-law distance can go slightly negative at surface in float32
+        ('float r_i = sqrt(r * r + dist * dist + 2.0 * r * dist * mu);',
+         'float r_i = sqrt(max(0.0, r * r + dist * dist + 2.0 * r * dist * mu));'),
+    ]),
+]
+
+for lut_file, fixes in lut_fixes:
+    if not os.path.exists(lut_file):
+        print('NOT FOUND: ' + lut_file)
+        continue
+    content = open(lut_file).read()
+    changed = False
+    for old, new in fixes:
+        if old in content:
+            content = content.replace(old, new)
+            print('FIXED LUT guard [' + old[:55] + '...] in ' + lut_file)
+            changed = True
+        else:
+            print('SKIP (not found or already fixed): ' + old[:55])
+    if changed:
+        open(lut_file, 'w').write(content)
