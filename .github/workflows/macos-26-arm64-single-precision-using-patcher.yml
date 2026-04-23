@@ -51,13 +51,11 @@ jobs:
         cd "$openSpaceHome"
         python3 smart_patcher.py MacOS-patches.txt        
         
-    - name: apply atmosphere NaN fix and layers fix
+    - name: apply layers fix
       run: |
         openSpaceHome="$HOME/source/OpenSpace"
-        cp -v MacOS-patches/atmosphere-nan-fix.txt "$openSpaceHome/atmosphere-nan-fix.txt"
         cp -v MacOS-patches/layers-fix.txt "$openSpaceHome/layers-fix.txt"
         cd "$openSpaceHome"
-        python3 smart_patcher.py atmosphere-nan-fix.txt
         python3 smart_patcher.py layers-fix.txt
 
     - name: get the single precision patches
