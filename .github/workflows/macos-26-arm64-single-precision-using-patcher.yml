@@ -83,27 +83,8 @@ jobs:
         #python smart_patcher.py changes-to-shaders.diff
         python smart_patcher.py changes-to-shadersv2.diff
         # Force-fix #{nDepthMaps} - must run last as single-precision patches may not handle it
-        python3 - <<'PYEOF'
-import os
-files = [
-    'modules/globebrowsing/shaders/globalrenderer_vs.glsl',
-    'modules/globebrowsing/shaders/localrenderer_vs.glsl',
-    'modules/globebrowsing/shaders/renderer_fs.glsl',
-]
-OLD = '#define nDepthMaps #{nDepthMaps}'
-NEW = '#define nDepthMaps 0'
-for f in files:
-    if not os.path.exists(f):
-        print(f'NOT FOUND: {f}')
-        continue
-    content = open(f).read()
-    if OLD in content:
-        open(f, 'w').write(content.replace(OLD, NEW))
-        print(f'FIXED: {f}')
-    else:
-        print(f'Pattern absent (may already be fixed): {f}')
-        print(f'  Line 32-34: {repr(content.splitlines()[31:34])}')
-PYEOF
+        cp -v $GITHUB_WORKSPACE/MacOS-patches/fix_ndepthmaps.py .
+        python3 fix_ndepthmaps.py
 
     - name: Update Homebrew and Install GLM
       run: |
