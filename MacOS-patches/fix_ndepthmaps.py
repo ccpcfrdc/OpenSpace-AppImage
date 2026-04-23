@@ -100,3 +100,33 @@ if os.path.exists(atm_common_file):
         open(atm_common_file, 'w').write(content)
 else:
     print('NOT FOUND: ' + atm_common_file)
+
+# Fix 4: Discard near-black pixels in pointcloud sprite texture sampling.
+# On Apple Silicon (Metal backend), additive blending via glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+# does not suppress black texels — black borders appear around galaxy images (e.g. Tully).
+# Discarding pixels whose luminance < 0.005 removes the border without affecting visible content.
+pc_file = 'modules/base/shaders/pointcloud/pointcloud_fs.glsl'
+pc_fix_old = (
+    '  if (hasSpriteTexture) {\n'
+    '    vec4 texColor = texture(spriteTexture, vec3(in_data.texCoords, in_data.textureLayer));\n'
+    '    fullColor *= useTextureAlpha ? texColor : vec4(texColor.rgb, 1.0);\n'
+    '  }'
+)
+pc_fix_new = (
+    '  if (hasSpriteTexture) {\n'
+    '    vec4 texColor = texture(spriteTexture, vec3(in_data.texCoords, in_data.textureLayer));\n'
+    '    if (dot(texColor.rgb, vec3(0.333)) < 0.005) discard;\n'
+    '    fullColor *= useTextureAlpha ? texColor : vec4(texColor.rgb, 1.0);\n'
+    '  }'
+)
+
+if os.path.exists(pc_file):
+    content = open(pc_file).read()
+    if pc_fix_old in content:
+        content = content.replace(pc_fix_old, pc_fix_new)
+        open(pc_file, 'w').write(content)
+        print('FIXED pointcloud black border discard in ' + pc_file)
+    else:
+        print('SKIP (not found or already fixed): pointcloud black border discard')
+else:
+    print('NOT FOUND: ' + pc_file)
