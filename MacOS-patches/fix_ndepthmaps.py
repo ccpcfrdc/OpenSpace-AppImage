@@ -204,3 +204,31 @@ if os.path.exists(atm_common_clamp_file):
         open(atm_common_clamp_file, 'w').write(content)
 else:
     print('NOT FOUND: ' + atm_common_clamp_file)
+
+# Fix 8: Clamp u_mu in texture4D to prevent 0/0 singularity when camera is near surface.
+# When rmu < 0 && delta > 0 (ray toward ground), cst.z == 0, making denominator == rho.
+# When r ≈ Rg (camera near Earth surface), rho → 0 AND numerator → 0 simultaneously,
+# producing 0/0 = undefined in float32. Result: u_mu gets an arbitrary value → wrong
+# inscattering LUT lookup → blue flash near Earth. Clamping u_mu to [0, 1] is safe
+# because the mapping is designed to stay within [0.5/N, 1-0.5/N] ⊂ [0, 1].
+atm_common_uclamp_old = (
+    '  float u_mu = cst.w + (rmu * cst.x + sqrt(delta + cst.y)) / (rho + cst.z) *\n'
+    '    (0.5 - 1.0 / samplesMu);\n'
+    '  float u_mu_s = 0.5 / float(samplesMuS) +'
+)
+atm_common_uclamp_new = (
+    '  float u_mu = clamp(cst.w + (rmu * cst.x + sqrt(delta + cst.y)) / max(rho + cst.z, 1e-4) *\n'
+    '    (0.5 - 1.0 / samplesMu), 0.0, 1.0);\n'
+    '  float u_mu_s = 0.5 / float(samplesMuS) +'
+)
+
+if os.path.exists(atm_common_clamp_file):
+    content = open(atm_common_clamp_file).read()
+    if atm_common_uclamp_old in content:
+        content = content.replace(atm_common_uclamp_old, atm_common_uclamp_new)
+        open(atm_common_clamp_file, 'w').write(content)
+        print('FIXED texture4D u_mu singularity clamp in ' + atm_common_clamp_file)
+    else:
+        print('SKIP (not found or already fixed): texture4D u_mu singularity clamp')
+else:
+    print('NOT FOUND: ' + atm_common_clamp_file)
