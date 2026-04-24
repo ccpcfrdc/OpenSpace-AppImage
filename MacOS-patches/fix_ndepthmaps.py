@@ -428,3 +428,98 @@ if os.path.exists(cpp_file):
         print('SKIP (not found or already fixed): double-precision preRaycast transforms')
 else:
     print('NOT FOUND: ' + cpp_file)
+
+# Fix 11: Precise view-to-object matrix for positionObjectsCoords reconstruction.
+#
+# Even with Fix 10, positionObjectsCoords is still imprecise:
+#   vec4 positionWorldCoords = viewToWorldMatrix * position;        // view → world (~1.5e11 m)
+#   vec3 positionObjectsCoords = (inverseModelTransformMatrix * positionWorldCoords).xyz;
+# Both mat4 uniforms have solar-scale elements in float32 (~18 km precision).
+# The two-step transform adds then subtracts ~1.5e11 m — float32 catastrophic cancellation.
+# pixelDepth = length(camPosObj - positionObjectsCoords) has ~18 km error →
+# atmosphere flicker when camera moves (new positionObjectsCoords each frame).
+#
+# Fix: precompute viewToObjectMatrix = invModel × viewToWorld in double (C++).
+# The product's translation column = camPosObj (~6400 km), not ~1.5e11 m.
+# Elements are small → accurate float32 uniform. GLSL uses it directly on position
+# (view space) to get positionObjectsCoords without going through world space.
+
+atm_glsl_file = 'modules/atmosphere/shaders/atmosphere_deferred_fs.glsl'
+
+# Fix 11a: Declare viewToObjectMatrix uniform in GLSL
+glsl_uni_old = (
+    'uniform mat4 viewToWorldMatrix;\n'
+    'uniform mat4 projectionToModelTransformMatrix;'
+)
+glsl_uni_new = (
+    'uniform mat4 viewToWorldMatrix;\n'
+    'uniform mat4 viewToObjectMatrix;\n'
+    'uniform mat4 projectionToModelTransformMatrix;'
+)
+
+if os.path.exists(atm_glsl_file):
+    content = open(atm_glsl_file).read()
+    if glsl_uni_old in content:
+        content = content.replace(glsl_uni_old, glsl_uni_new)
+        open(atm_glsl_file, 'w').write(content)
+        print('FIXED viewToObjectMatrix uniform declaration in ' + atm_glsl_file)
+    else:
+        print('SKIP (not found or already fixed): viewToObjectMatrix uniform declaration')
+else:
+    print('NOT FOUND: ' + atm_glsl_file)
+
+# Fix 11b: Use viewToObjectMatrix to compute positionObjectsCoords
+glsl_pos_old = (
+    '  // World to Object (Normal and Position in meters)\n'
+    '  vec3 positionObjectsCoords = (inverseModelTransformMatrix * positionWorldCoords).xyz;'
+)
+glsl_pos_new = (
+    '  // World to Object (Normal and Position in meters)\n'
+    '  // viewToObjectMatrix = invModel * viewToWorld, precomputed in double in C++\n'
+    '  // avoids solar-scale (~1.5e11 m) float32 precision loss in two-step transform\n'
+    '  vec3 positionObjectsCoords = (viewToObjectMatrix * position).xyz;'
+)
+
+if os.path.exists(atm_glsl_file):
+    content = open(atm_glsl_file).read()
+    if glsl_pos_old in content:
+        content = content.replace(glsl_pos_old, glsl_pos_new)
+        open(atm_glsl_file, 'w').write(content)
+        print('FIXED positionObjectsCoords via viewToObjectMatrix in ' + atm_glsl_file)
+    else:
+        print('SKIP (not found or already fixed): positionObjectsCoords via viewToObjectMatrix')
+else:
+    print('NOT FOUND: ' + atm_glsl_file)
+
+# Fix 11c: Compute and send viewToObjectMatrix from C++ (runs after Fix 10c modified the file)
+# Finds the Eye-Space-to-World-Space setUniform line (written by Fix 10c) and adds the
+# viewToObjectMatrix computation right after it.
+cpp_vto_old = (
+    '        // Eye Space to World Space\n'
+    '        prg.setUniform(_uniformCache.viewToWorldMatrix, glm::mat4(viewToWorldMatrixD));\n'
+    '\n'
+    '        // Projection to Eye Space\n'
+)
+cpp_vto_new = (
+    '        // Eye Space to World Space\n'
+    '        prg.setUniform(_uniformCache.viewToWorldMatrix, glm::mat4(viewToWorldMatrixD));\n'
+    '\n'
+    '        // Precise view-to-object matrix: invModel * viewToWorld in double.\n'
+    '        // Translation column = camPosObj (~6400 km), not solar-scale (~1.5e11 m).\n'
+    '        // Sending as float32 is safe; used in GLSL for positionObjectsCoords.\n'
+    '        glm::mat4 viewToObject = glm::mat4(invModelMatrixD * viewToWorldMatrixD);\n'
+    '        prg.setUniform("viewToObjectMatrix", viewToObject);\n'
+    '\n'
+    '        // Projection to Eye Space\n'
+)
+
+if os.path.exists(cpp_file):
+    content = open(cpp_file).read()
+    if cpp_vto_old in content:
+        content = content.replace(cpp_vto_old, cpp_vto_new)
+        open(cpp_file, 'w').write(content)
+        print('FIXED viewToObjectMatrix setUniform in preRaycast in ' + cpp_file)
+    else:
+        print('SKIP (not found or already fixed): viewToObjectMatrix setUniform in preRaycast')
+else:
+    print('NOT FOUND: ' + cpp_file)
