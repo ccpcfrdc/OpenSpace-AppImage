@@ -286,3 +286,145 @@ for lut_file, fixes in lut_fixes:
             print('SKIP (not found or already fixed): ' + old[:55])
     if changed:
         open(lut_file, 'w').write(content)
+
+# Fix 10: Restore double-precision model transform in atmospheredeferredcaster.
+#
+# Root cause of atmosphere blue flicker:
+# applesilicon.diffedited.txt converts _modelTransform from dmat4 to mat4.
+# Earth's model transform includes its solar-system translation (~1.5e11 m).
+# float32 precision at 1.5e11 m is ~18 km (= 1.5e11 / 2^23).
+# camPosObj = invModelMatrix * eyePosition inherits this ~18 km error.
+# In the GLSL atmosphereIntersection(), |ray.origin| is compared to Rt (~6471 km).
+# When the camera is within ~18 km of the atmosphere boundary, the test flips
+# randomly frame to frame -> blue geometric shapes flicker around Earth.
+#
+# Fix: restore _modelTransform as dmat4, compute invModelMatrix in double,
+# compute camPosObj and the full pipeline transform in double, then downcast
+# to float32 only when setting the GLSL uniforms (which are float-typed).
+
+cpp_file = 'modules/atmosphere/rendering/atmospheredeferredcaster.cpp'
+h_file = 'modules/atmosphere/rendering/atmospheredeferredcaster.h'
+
+# Fix 10a: _modelTransform field back to dmat4 in header
+h_old = '    glm::mat4 _modelTransform;'
+h_new = '    glm::dmat4 _modelTransform;'
+
+if os.path.exists(h_file):
+    content = open(h_file).read()
+    if h_old in content:
+        content = content.replace(h_old, h_new)
+        open(h_file, 'w').write(content)
+        print('FIXED _modelTransform restored to dmat4 in ' + h_file)
+    else:
+        print('SKIP (not found or already fixed): _modelTransform dmat4 in header')
+else:
+    print('NOT FOUND: ' + h_file)
+
+# Fix 10b: setModelTransform — stop casting dmat4 to mat4 on store
+cpp_set_old = '    _modelTransform = std::move(static_cast<glm::mat4>(transform));'
+cpp_set_new = '    _modelTransform = std::move(transform);'
+
+if os.path.exists(cpp_file):
+    content = open(cpp_file).read()
+    if cpp_set_old in content:
+        content = content.replace(cpp_set_old, cpp_set_new)
+        open(cpp_file, 'w').write(content)
+        print('FIXED setModelTransform stores dmat4 in ' + cpp_file)
+    else:
+        print('SKIP (not found or already fixed): setModelTransform dmat4 store')
+else:
+    print('NOT FOUND: ' + cpp_file)
+
+# Fix 10c: preRaycast — compute matrices and camPosObj in double, cast only for uniforms
+cpp_prr_old = (
+    '        // Object Space\n'
+    '        glm::mat4 invModelMatrix = glm::inverse(_modelTransform);\n'
+    '        prg.setUniform(_uniformCache.inverseModelTransformMatrix, invModelMatrix);\n'
+    '        prg.setUniform(_uniformCache.modelTransformMatrix, _modelTransform);\n'
+    '\n'
+    '        glm::mat4 viewToWorldMatrix =\n'
+    '            glm::inverse(static_cast<glm::mat4>(data.camera.combinedViewMatrix()));\n'
+    '\n'
+    '        // Eye Space to World Space\n'
+    '        prg.setUniform(_uniformCache.viewToWorldMatrix, viewToWorldMatrix);\n'
+    '\n'
+    '        // Projection to Eye Space\n'
+    '        glm::mat4 dInvProj = glm::inverse(data.camera.projectionMatrix());\n'
+    '\n'
+    '        glm::mat4 invWholePipeline = invModelMatrix * viewToWorldMatrix * dInvProj;\n'
+    '\n'
+    '        prg.setUniform(_uniformCache.projectionToModelTransform, invWholePipeline);\n'
+    '\n'
+    '        glm::vec4 camPosObjCoords = invModelMatrix *\n'
+    '            glm::vec4(static_cast<glm::vec3>(data.camera.eyePositionVec3()), 1.0);\n'
+    '        prg.setUniform(_uniformCache.camPosObj, glm::vec3(camPosObjCoords));\n'
+    '\n'
+    '        SceneGraphNode* node = sceneGraph()->sceneGraphNode("Sun");\n'
+    '        glm::dvec3 sunPosWorld = node ? node->worldPosition() : glm::dvec3(0.0);\n'
+    '\n'
+    '        glm::vec3 sunPosObj;\n'
+    '        // Sun following camera position\n'
+    '        if (_sunFollowingCameraEnabled) {\n'
+    '            sunPosObj = invModelMatrix *\n'
+    '                glm::vec4(glm::vec3(data.camera.eyePositionVec3()), 1.0);\n'
+    '        }\n'
+    '        else {\n'
+    '            sunPosObj = invModelMatrix * static_cast<glm::vec4>(\n'
+    '                glm::dvec4((sunPosWorld - data.modelTransform.translation) * 1000.0, 1.0)\n'
+    '            );\n'
+    '        }\n'
+    '\n'
+    '        // Sun Position in Object Space\n'
+    '        prg.setUniform(_uniformCache.sunDirectionObj, glm::normalize(sunPosObj));'
+)
+cpp_prr_new = (
+    '        // Object Space\n'
+    '        glm::dmat4 invModelMatrixD = glm::inverse(_modelTransform);\n'
+    '        prg.setUniform(_uniformCache.inverseModelTransformMatrix, glm::mat4(invModelMatrixD));\n'
+    '        prg.setUniform(_uniformCache.modelTransformMatrix, glm::mat4(_modelTransform));\n'
+    '\n'
+    '        glm::dmat4 viewToWorldMatrixD =\n'
+    '            glm::inverse(data.camera.combinedViewMatrix());\n'
+    '\n'
+    '        // Eye Space to World Space\n'
+    '        prg.setUniform(_uniformCache.viewToWorldMatrix, glm::mat4(viewToWorldMatrixD));\n'
+    '\n'
+    '        // Projection to Eye Space\n'
+    '        glm::dmat4 dInvProj = glm::inverse(glm::dmat4(data.camera.projectionMatrix()));\n'
+    '\n'
+    '        glm::mat4 invWholePipeline = glm::mat4(invModelMatrixD * viewToWorldMatrixD * dInvProj);\n'
+    '\n'
+    '        prg.setUniform(_uniformCache.projectionToModelTransform, invWholePipeline);\n'
+    '\n'
+    '        glm::dvec4 camPosObjCoords = invModelMatrixD *\n'
+    '            glm::dvec4(data.camera.eyePositionVec3(), 1.0);\n'
+    '        prg.setUniform(_uniformCache.camPosObj, glm::vec3(camPosObjCoords));\n'
+    '\n'
+    '        SceneGraphNode* node = sceneGraph()->sceneGraphNode("Sun");\n'
+    '        glm::dvec3 sunPosWorld = node ? node->worldPosition() : glm::dvec3(0.0);\n'
+    '\n'
+    '        glm::dvec3 sunPosObj;\n'
+    '        // Sun following camera position\n'
+    '        if (_sunFollowingCameraEnabled) {\n'
+    '            sunPosObj = glm::dvec3(invModelMatrixD *\n'
+    '                glm::dvec4(data.camera.eyePositionVec3(), 1.0));\n'
+    '        }\n'
+    '        else {\n'
+    '            sunPosObj = glm::dvec3(invModelMatrixD *\n'
+    '                glm::dvec4((sunPosWorld - data.modelTransform.translation) * 1000.0, 1.0));\n'
+    '        }\n'
+    '\n'
+    '        // Sun Position in Object Space\n'
+    '        prg.setUniform(_uniformCache.sunDirectionObj, glm::normalize(glm::vec3(sunPosObj)));'
+)
+
+if os.path.exists(cpp_file):
+    content = open(cpp_file).read()
+    if cpp_prr_old in content:
+        content = content.replace(cpp_prr_old, cpp_prr_new)
+        open(cpp_file, 'w').write(content)
+        print('FIXED double-precision preRaycast transforms in ' + cpp_file)
+    else:
+        print('SKIP (not found or already fixed): double-precision preRaycast transforms')
+else:
+    print('NOT FOUND: ' + cpp_file)
