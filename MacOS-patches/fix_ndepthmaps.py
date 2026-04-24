@@ -212,13 +212,11 @@ else:
 # inscattering LUT lookup → blue flash near Earth. Clamping u_mu to [0, 1] is safe
 # because the mapping is designed to stay within [0.5/N, 1-0.5/N] ⊂ [0, 1].
 atm_common_uclamp_old = (
-    '  float u_mu = cst.w + (rmu * cst.x + sqrt(delta + cst.y)) / (rho + cst.z) *\n'
-    '    (0.5 - 1.0 / samplesMu);\n'
+    '  float u_mu = cst.w + (rmu * cst.x + sqrt(delta + cst.y)) / (rho + cst.z) * (0.5 - 1.0 / samplesMu);\n'
     '  float u_mu_s = 0.5 / float(samplesMuS) +'
 )
 atm_common_uclamp_new = (
-    '  float u_mu = clamp(cst.w + (rmu * cst.x + sqrt(delta + cst.y)) / max(rho + cst.z, 1e-4) *\n'
-    '    (0.5 - 1.0 / samplesMu), 0.0, 1.0);\n'
+    '  float u_mu = clamp(cst.w + (rmu * cst.x + sqrt(delta + cst.y)) / max(rho + cst.z, 1e-4) * (0.5 - 1.0 / samplesMu), 0.0, 1.0);\n'
     '  float u_mu_s = 0.5 / float(samplesMuS) +'
 )
 
