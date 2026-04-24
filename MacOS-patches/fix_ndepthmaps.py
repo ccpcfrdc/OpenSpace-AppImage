@@ -237,31 +237,32 @@ else:
 # LUT, which then produce wrong inscattering/transmittance at runtime → blue flicker.
 # Fix 6 (NaN output guard) cannot catch finite wrong values; fix them at the source.
 lut_fixes = [
-    ('modules/atmosphere/shaders/delta_j_calc_fs.glsl', [
+    # Build commit uses camelCase filenames and Rg/Rg2 variable names (not rPlanet/rPlanet2)
+    ('modules/atmosphere/shaders/deltaJ_calc_fs.glsl', [
         # sinThetaSinSigma: mu*mu or muSun*muSun slightly > 1 in float32
         ('float sinThetaSinSigma = sqrt(1.0 - mu2) * sqrt(1.0 - muSun2);',
          'float sinThetaSinSigma = sqrt(max(0.0, 1.0 - mu2)) * sqrt(max(0.0, 1.0 - muSun2));'),
         # view direction vector: same mu2 issue
         ('vec3 v = vec3(sqrt(1.0 - mu2), 0.0, mu);',
          'vec3 v = vec3(sqrt(max(0.0, 1.0 - mu2)), 0.0, mu);'),
-        # distanceToGround: r2*(cosineTheta2-1)+rPlanet2 can be negative near surface
-        ('distanceToGround = -r * cosineTheta - sqrt(r2 * (cosineTheta2 - 1.0) + rPlanet2);',
-         'distanceToGround = -r * cosineTheta - sqrt(max(0.0, r2 * (cosineTheta2 - 1.0) + rPlanet2));'),
+        # distanceToGround: uses Rg2 (not rPlanet2) at build commit
+        ('distanceToGround = -r * cosineTheta - sqrt(r2 * (cosineTheta2 - 1.0) + Rg2);',
+         'distanceToGround = -r * cosineTheta - sqrt(max(0.0, r2 * (cosineTheta2 - 1.0) + Rg2));'),
     ]),
     ('modules/atmosphere/shaders/transmittance_calc_fs.glsl', [
-        # cosZenithHorizon: r < rPlanet in float32 makes arg negative
-        ('float cosZenithHorizon = -sqrt(1.0 - ((rPlanet * rPlanet) / r2));',
-         'float cosZenithHorizon = -sqrt(max(0.0, 1.0 - ((rPlanet * rPlanet) / r2)));'),
-        # y_ii: ray going underground when mu < 0 makes cosine-law arg negative
-        ('float y_ii = exp(-(sqrt(r2 + x_i * x_i + 2.0 * x_i * r * mu) - rPlanet) / H);',
-         'float y_ii = exp(-(sqrt(max(0.0, r2 + x_i * x_i + 2.0 * x_i * r * mu)) - rPlanet) / H);'),
+        # cosZenithHorizon: uses Rg (not rPlanet) at build commit
+        ('float cosZenithHorizon = -sqrt(1.0 - ((Rg * Rg) / r2));',
+         'float cosZenithHorizon = -sqrt(max(0.0, 1.0 - ((Rg * Rg) / r2)));'),
+        # y_ii: uses Rg (not rPlanet) at build commit
+        ('float y_ii = exp(-(sqrt(r2 + x_i * x_i + 2.0 * x_i * r * mu) - Rg) / H);',
+         'float y_ii = exp(-(sqrt(max(0.0, r2 + x_i * x_i + 2.0 * x_i * r * mu)) - Rg) / H);'),
     ]),
-    ('modules/atmosphere/shaders/inscattering_calc_fs.glsl', [
-        # muSun_i horizon check: ri ≈ rPlanet makes 1-rPlanet²/ri² tiny-negative
-        ('if (muSun_i >= -sqrt(1.0 - rPlanet * rPlanet / (ri * ri))) {',
-         'if (muSun_i >= -sqrt(max(0.0, 1.0 - rPlanet * rPlanet / (ri * ri)))) {'),
+    ('modules/atmosphere/shaders/inScattering_calc_fs.glsl', [
+        # muSun_i horizon check: uses Rg (not rPlanet) at build commit
+        ('if (muSun_i >= -sqrt(1.0 - Rg * Rg / (ri * ri))) {',
+         'if (muSun_i >= -sqrt(max(0.0, 1.0 - Rg * Rg / (ri * ri)))) {'),
     ]),
-    ('modules/atmosphere/shaders/inscattering_sup_calc_fs.glsl', [
+    ('modules/atmosphere/shaders/inScattering_sup_calc_fs.glsl', [
         # r_i: cosine-law distance can go slightly negative at surface in float32
         ('float r_i = sqrt(r * r + dist * dist + 2.0 * r * dist * mu);',
          'float r_i = sqrt(max(0.0, r * r + dist * dist + 2.0 * r * dist * mu));'),
