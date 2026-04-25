@@ -41,15 +41,21 @@ atm_fixes = [
     # atmosphereIntersection: r2-m2 can be tiny-negative in float
     ('float q = sqrt(r2 - m2);',
      'float q = sqrt(max(0.0, r2 - m2));'),
-    # inscatterRadiance: muHorizon arg can be tiny-negative when r is close to Rg in float
-    ('float muHorizon = -sqrt(1.0 - Rg*Rg / r2);',
-     'float muHorizon = -sqrt(max(0.0, 1.0 - Rg*Rg / r2));'),
+    # inscatterRadiance: muHorizon arg can be tiny-negative when r is close to rPlanet in float
+    # Build commit uses rPlanet/rAtmosphere variable names (not Rg/Rt).
+    ('  float muHorizon = -sqrt(1.0 - rPlanet * rPlanet / r2);',
+     '  float muHorizon = -sqrt(max(0.0, 1.0 - rPlanet * rPlanet / r2));'),
     # inscatterRadiance: horizon-interpolation r0 (above AND below, both occurrences replaced)
     ('r0 = sqrt(halfCosineLaw1 + halfCosineLaw2 * mu);',
      'r0 = sqrt(max(0.0, halfCosineLaw1 + halfCosineLaw2 * mu));'),
-    # groundColor: planet-horizon check can go negative when r0 < Rg in float
-    ('muSun < -sqrt(1.0 - (Rg*Rg / (r0 * r0)))  ?  vec3(0.0)  :  transmittance(transmittanceTexture, r0, muSun, Rg, Rt);',
-     'muSun < -sqrt(max(0.0, 1.0 - (Rg*Rg / (r0 * r0))))  ?  vec3(0.0)  :  transmittance(transmittanceTexture, r0, muSun, Rg, Rt);'),
+    # groundColor: planet-horizon check can go negative when r0 < rPlanet in float
+    # Build commit uses multi-line format with rPlanet/rAtmosphere (not Rg/Rt).
+    ('    muSun < -sqrt(1.0 - (rPlanet * rPlanet / (r0 * r0))) ?\n'
+     '    vec3(0.0) :\n'
+     '    transmittance(transmittanceTexture, r0, muSun, rPlanet, rAtmosphere);',
+     '    muSun < -sqrt(max(0.0, 1.0 - (rPlanet * rPlanet / (r0 * r0)))) ?\n'
+     '    vec3(0.0) :\n'
+     '    transmittance(transmittanceTexture, r0, muSun, rPlanet, rAtmosphere);'),
 ]
 
 if os.path.exists(atm_file):
@@ -125,12 +131,12 @@ else:
 # not covered by individual guards above.
 atm_out_old = (
     '  vec3 c = mix(color.rgb, inscatterColor + atmColor, opacity);\n'
-    '  renderTarget = vec4(c, 1.0);'
+    '  out_color = vec4(c, 1.0);'
 )
 atm_out_new = (
     '  vec3 c = mix(color.rgb, inscatterColor + atmColor, opacity);\n'
     '  if (c.r != c.r || c.g != c.g || c.b != c.b) c = color.rgb;\n'
-    '  renderTarget = vec4(c, 1.0);'
+    '  out_color = vec4(c, 1.0);'
 )
 
 if os.path.exists(atm_exp_file):
@@ -232,6 +238,35 @@ if os.path.exists(atm_common_clamp_file):
         print('SKIP (not found or already fixed): texture4D u_mu singularity clamp')
 else:
     print('NOT FOUND: ' + atm_common_clamp_file)
+
+# Fix 12: Clamp u_r and u_muSun in irradiance() LUT lookup in atmosphere_deferred_fs.glsl.
+# After single-precision conversion, r passed to irradiance() can be slightly < rPlanet
+# (e.g. when surface pixel r0 = length(x + t*v) rounds down). This gives u_r < 0.
+# Also muSun passed from groundColor uses max(dotNS, 0) but muSun > 1.0 is theoretically
+# possible with float rounding, giving u_muSun > 1.0.
+# Without clamping, out-of-range UVs on Metal may not use GL_CLAMP_TO_EDGE correctly.
+irr_file = 'modules/atmosphere/shaders/atmosphere_deferred_fs.glsl'
+irr_old = (
+    '  float u_r = (r - rPlanet) / (rAtmosphere - rPlanet);\n'
+    '  float u_muSun = (muSun + 0.2) / 1.2;\n'
+    '  return texture(s, vec2(u_muSun, u_r)).rgb;'
+)
+irr_new = (
+    '  float u_r = clamp((r - rPlanet) / (rAtmosphere - rPlanet), 0.0, 1.0);\n'
+    '  float u_muSun = clamp((muSun + 0.2) / 1.2, 0.0, 1.0);\n'
+    '  return texture(s, vec2(u_muSun, u_r)).rgb;'
+)
+
+if os.path.exists(irr_file):
+    content = open(irr_file).read()
+    if irr_old in content:
+        content = content.replace(irr_old, irr_new)
+        open(irr_file, 'w').write(content)
+        print('FIXED irradiance u_r/u_muSun clamp in ' + irr_file)
+    else:
+        print('SKIP (not found or already fixed): irradiance u_r/u_muSun clamp')
+else:
+    print('NOT FOUND: ' + irr_file)
 
 # Fix 9: NaN guards in precomputed LUT shaders (delta_j, transmittance, inscattering).
 # These shaders run once at startup to bake atmosphere LUT textures. On Metal,
