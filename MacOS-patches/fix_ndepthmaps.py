@@ -491,24 +491,47 @@ if os.path.exists(atm_glsl_file):
 else:
     print('NOT FOUND: ' + atm_glsl_file)
 
-# Fix 11c: Compute and send viewToObjectMatrix from C++ (runs after Fix 10c modified the file)
-# Finds the Eye-Space-to-World-Space setUniform line (written by Fix 10c) and adds the
-# viewToObjectMatrix computation right after it.
+# Fix 11d: Add viewToObjectMatrix to UniformCache in header.
+# The build commit's UniformCache does not include viewToObjectMatrix; without this,
+# program.setUniform(_uniformCache.viewToObjectMatrix, ...) would not compile.
+# Must run before Fix 11c (which uses _uniformCache.viewToObjectMatrix).
+h_uc_old = '        projectionToModelTransformMatrix, viewToWorldMatrix, camPosObj, sunDirectionObj,'
+h_uc_new = '        projectionToModelTransformMatrix, viewToWorldMatrix, viewToObjectMatrix, camPosObj, sunDirectionObj,'
+
+if os.path.exists(h_file):
+    content = open(h_file).read()
+    if h_uc_old in content:
+        content = content.replace(h_uc_old, h_uc_new)
+        open(h_file, 'w').write(content)
+        print('FIXED viewToObjectMatrix added to UniformCache in ' + h_file)
+    else:
+        print('SKIP (not found or already fixed): viewToObjectMatrix in UniformCache')
+else:
+    print('NOT FOUND: ' + h_file)
+
+# Fix 11c: Compute and send viewToObjectMatrix from C++.
+# The applesilicon patch keeps the build commit's program.setUniform calls and variable
+# names (invModelMatrix, viewToWorld — both const glm::dmat4). Fix 10c was designed for
+# a different code path (prg.setUniform) and SKIPS on this build commit. We therefore
+# match the applesilicon-patched text directly using program.setUniform and the correct
+# variable names.
 cpp_vto_old = (
     '        // Eye Space to World Space\n'
-    '        prg.setUniform(_uniformCache.viewToWorldMatrix, glm::mat4(viewToWorldMatrixD));\n'
+    '        // Cast to float (mat4)\n'
+    '        program.setUniform(_uniformCache.viewToWorldMatrix, glm::mat4(viewToWorld));\n'
     '\n'
     '        // Projection to Eye Space\n'
 )
 cpp_vto_new = (
     '        // Eye Space to World Space\n'
-    '        prg.setUniform(_uniformCache.viewToWorldMatrix, glm::mat4(viewToWorldMatrixD));\n'
+    '        // Cast to float (mat4)\n'
+    '        program.setUniform(_uniformCache.viewToWorldMatrix, glm::mat4(viewToWorld));\n'
     '\n'
     '        // Precise view-to-object matrix: invModel * viewToWorld in double.\n'
     '        // Translation column = camPosObj (~6400 km), not solar-scale (~1.5e11 m).\n'
     '        // Sending as float32 is safe; used in GLSL for positionObjectsCoords.\n'
-    '        glm::mat4 viewToObject = glm::mat4(invModelMatrixD * viewToWorldMatrixD);\n'
-    '        prg.setUniform("viewToObjectMatrix", viewToObject);\n'
+    '        glm::mat4 viewToObject = glm::mat4(invModelMatrix * viewToWorld);\n'
+    '        program.setUniform(_uniformCache.viewToObjectMatrix, viewToObject);\n'
     '\n'
     '        // Projection to Eye Space\n'
 )
