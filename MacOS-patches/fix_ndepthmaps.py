@@ -164,13 +164,14 @@ pc_fix_old = (
 )
 # Discard near-black OR transparent pixels:
 # - alpha < 0.1: catches PNGs with transparent backgrounds
-# - luminance < 0.15: catches black/dark-grey backgrounds including JPEG compression artifacts
+# - luminance < 0.25: catches black/dark-grey backgrounds; astronomical image sky
+#   backgrounds typically have luminance 0.15-0.25 after processing/darkening.
 # Using OR so either condition alone is sufficient.
 pc_fix_new = (
     '  vec4 textureColor = vec4(1.0);\n'
     '  if (hasSpriteTexture) {\n'
     '    textureColor = texture(spriteTexture, vec3(texCoord, layer));\n'
-    '    if (textureColor.a < 0.1 || dot(textureColor.rgb, vec3(0.333)) < 0.15) discard;\n'
+    '    if (textureColor.a < 0.1 || dot(textureColor.rgb, vec3(0.333)) < 0.25) discard;\n'
     '    fullColor *= textureColor;\n'
     '  }'
 )
