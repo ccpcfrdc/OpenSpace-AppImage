@@ -581,3 +581,30 @@ if os.path.exists(cpp_file):
         print('SKIP (not found or already fixed): viewToObjectMatrix setUniform in preRaycast')
 else:
     print('NOT FOUND: ' + cpp_file)
+
+# Fix 13: Use dotNS (actual sun angle) for sky irradiance lookup in groundColor().
+#
+# Bug: groundColor() clamps muSun = max(dotNS, 0) for direct illumination, then
+# passes that same muSun to irradiance(). For all nightside pixels (dotNS < 0),
+# muSun = 0, so every nightside pixel queries irradiance at muSun=0 = sun-at-horizon
+# (maximum twilight irradiance). The entire nightside appears uniformly bright blue
+# as if it were at the terminator — the "blue rectangle" artifact in screenshots.
+#
+# Fix: pass dotNS directly to irradiance(). Fix 12 already clamps u_muSun inside
+# irradiance(), so negative dotNS safely produces minimum irradiance for deep
+# nightside instead of the terminator-bright value. Direct illumination (muSun via
+# max(dotNS, 0)) is unchanged — only the irradiance lookup argument changes.
+irrad_mufix_file = 'modules/atmosphere/shaders/atmosphere_deferred_fs.glsl'
+irrad_mufix_old = '  vec3 irradianceReflected = irradiance(irradianceTexture, r0, muSun) * irradianceFactor;'
+irrad_mufix_new = '  vec3 irradianceReflected = irradiance(irradianceTexture, r0, dotNS) * irradianceFactor;'
+
+if os.path.exists(irrad_mufix_file):
+    content = open(irrad_mufix_file).read()
+    if irrad_mufix_old in content:
+        content = content.replace(irrad_mufix_old, irrad_mufix_new)
+        open(irrad_mufix_file, 'w').write(content)
+        print('FIXED irradiance uses dotNS instead of muSun in groundColor() in ' + irrad_mufix_file)
+    else:
+        print('SKIP (not found or already fixed): irradiance dotNS fix in groundColor()')
+else:
+    print('NOT FOUND: ' + irrad_mufix_file)
