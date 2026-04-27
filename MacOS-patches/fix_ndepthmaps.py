@@ -545,12 +545,13 @@ if os.path.exists(h_file):
 else:
     print('NOT FOUND: ' + h_file)
 
-# Fix 11c: Compute and send viewToObjectMatrix from C++.
-# The applesilicon patch keeps the build commit's program.setUniform calls and variable
-# names (invModelMatrix, viewToWorld — both const glm::dmat4). Fix 10c was designed for
-# a different code path (prg.setUniform) and SKIPS on this build commit. We therefore
-# match the applesilicon-patched text directly using program.setUniform and the correct
-# variable names.
+# Fix 11c: Compute and send viewToObjectMatrix and precise camPosObj from C++.
+# applesilicon.diffedited.txt changes local variables invModelMatrix and viewToWorld
+# from dmat4 to mat4. Fix 10a restores _modelTransform to dmat4, but the local
+# variable declarations remain mat4 after applesilicon, so invModelMatrix*viewToWorld
+# is float32 multiplication — ~18 km precision loss at solar scale.
+# Fix: re-derive invModelD and viewToWorldD directly from source (dmat4) values,
+# compute viewToObjectMatrix and camPosObj in double, then cast to float32 for uniforms.
 cpp_vto_old = (
     '        // Eye Space to World Space\n'
     '        // Cast to float (mat4)\n'
@@ -563,10 +564,12 @@ cpp_vto_new = (
     '        // Cast to float (mat4)\n'
     '        program.setUniform(_uniformCache.viewToWorldMatrix, glm::mat4(viewToWorld));\n'
     '\n'
-    '        // Precise view-to-object matrix: invModel * viewToWorld in double.\n'
-    '        // Translation column = camPosObj (~6400 km), not solar-scale (~1.5e11 m).\n'
-    '        // Sending as float32 is safe; used in GLSL for positionObjectsCoords.\n'
-    '        glm::mat4 viewToObject = glm::mat4(invModelMatrix * viewToWorld);\n'
+    '        // Re-derive matrices in double: applesilicon changed local invModelMatrix\n'
+    '        // and viewToWorld to mat4, losing ~18 km precision at solar scale.\n'
+    '        // _modelTransform is dmat4 (Fix 10a) and combinedViewMatrix() is dmat4.\n'
+    '        glm::dmat4 invModelD = glm::inverse(_modelTransform);\n'
+    '        glm::dmat4 viewToWorldD = glm::inverse(data.camera.combinedViewMatrix());\n'
+    '        glm::mat4 viewToObject = glm::mat4(invModelD * viewToWorldD);\n'
     '        program.setUniform(_uniformCache.viewToObjectMatrix, viewToObject);\n'
     '\n'
     '        // Projection to Eye Space\n'
@@ -609,4 +612,38 @@ if os.path.exists(irrad_mufix_file):
         print('SKIP (not found or already fixed): irradiance dotNS fix in groundColor()')
 else:
     print('NOT FOUND: ' + irrad_mufix_file)
+
+# Fix 15: Derive ray.origin (camPosObj in km) from viewToObjectMatrix in GLSL.
+#
+# Root cause of atmosphere blue flicker:
+# applesilicon.diffedited.txt changes local C++ variables invModelMatrix and viewToWorld
+# from dmat4 to mat4. Even though Fix 10a restores _modelTransform to dmat4, the local
+# mat4 invModelMatrix is truncated from the dmat4 inverse — losing ~18 km precision at
+# solar scale. The camPosObj uniform is computed from this imprecise mat4:
+#   mat4 * vec4(eyePos_as_vec3)  →  catastrophic cancellation at 1.5e11 m scale.
+# When the camera is within ~18 km of the atmosphere boundary, camPosObj error causes
+# atmosphereIntersection() to flip inside/outside every frame → blue geometric flicker.
+#
+# Fix: viewToObjectMatrix (Fix 11c) is computed from restored dmat4 values directly
+# (invModelD, viewToWorldD), so its translation column IS camPosObj with full double
+# precision cast to float32 (~0.76 m at 6400 km = harmless). Replacing camPosObj with
+# (viewToObjectMatrix * vec4(0,0,0,1)).xyz in the GLSL eliminates the imprecise uniform.
+rayorigin_file = 'modules/atmosphere/shaders/atmosphere_deferred_fs.glsl'
+rayorigin_old = '  ray.origin = camPosObj * 0.001;'
+rayorigin_new = (
+    '  // Derive camera position in object space from viewToObjectMatrix (computed in\n'
+    '  // double in C++ — Fix 11c), bypassing the imprecise camPosObj uniform.\n'
+    '  ray.origin = (viewToObjectMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz * 0.001;'
+)
+
+if os.path.exists(rayorigin_file):
+    content = open(rayorigin_file).read()
+    if rayorigin_old in content:
+        content = content.replace(rayorigin_old, rayorigin_new)
+        open(rayorigin_file, 'w').write(content)
+        print('FIXED ray.origin derived from viewToObjectMatrix in ' + rayorigin_file)
+    else:
+        print('SKIP (not found or already fixed): ray.origin from viewToObjectMatrix')
+else:
+    print('NOT FOUND: ' + rayorigin_file)
 
