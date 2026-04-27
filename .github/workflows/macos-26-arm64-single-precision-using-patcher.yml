@@ -29,9 +29,17 @@ jobs:
       run: |
         df -h
         openSpaceHome="$HOME/source/OpenSpace"
-        git clone --recursive https://github.com/OpenSpace/OpenSpace.git "$openSpaceHome"
+        git clone https://github.com/OpenSpace/OpenSpace.git "$openSpaceHome"
         cd "$openSpaceHome"
-        git checkout "296081379b18da62686d2c0635c2478daae1b68b" --recurse-submodules
+        git checkout "296081379b18da62686d2c0635c2478daae1b68b"
+        # Separate submodule update with retry - avoids double-fetch corruption
+        # when --recurse-submodules on checkout needs different objects than clone HEAD
+        for attempt in 1 2 3; do
+          git submodule update --init --recursive && break
+          echo "Submodule update attempt $attempt failed, retrying in 20s..."
+          git submodule sync
+          sleep 20
+        done
         mkdir build
         cd build
 
