@@ -153,7 +153,8 @@ else:
 # Fix 4: Discard near-black pixels in pointcloud sprite texture sampling.
 # On Apple Silicon (Metal backend), additive blending via glBlendFunc(GL_SRC_ALPHA, GL_ONE)
 # does not suppress black texels — black borders appear around galaxy images (e.g. Tully).
-# Discarding pixels whose luminance < 0.005 removes the border without affecting visible content.
+# Discarding pixels whose luminance < 0.15 removes the border without affecting visible content.
+# Threshold 0.15 covers JPEG compression artifacts (dark grey ~15-40/255) around black backgrounds.
 pc_file = 'modules/base/shaders/pointcloud/pointcloud_fs.glsl'
 pc_fix_old = (
     '  vec4 textureColor = vec4(1.0);\n'
@@ -162,14 +163,14 @@ pc_fix_old = (
     '  }'
 )
 # Discard near-black OR transparent pixels:
-# - alpha < 0.1: catches PNGs with transparent backgrounds (even with non-black RGB)
-# - luminance < 0.05: catches black-background PNGs (including slightly grey JPEG artifacts)
+# - alpha < 0.1: catches PNGs with transparent backgrounds
+# - luminance < 0.15: catches black/dark-grey backgrounds including JPEG compression artifacts
 # Using OR so either condition alone is sufficient.
 pc_fix_new = (
     '  vec4 textureColor = vec4(1.0);\n'
     '  if (hasSpriteTexture) {\n'
     '    textureColor = texture(spriteTexture, vec3(texCoord, layer));\n'
-    '    if (textureColor.a < 0.1 || dot(textureColor.rgb, vec3(0.333)) < 0.05) discard;\n'
+    '    if (textureColor.a < 0.1 || dot(textureColor.rgb, vec3(0.333)) < 0.15) discard;\n'
     '    fullColor *= textureColor;\n'
     '  }'
 )
@@ -608,3 +609,4 @@ if os.path.exists(irrad_mufix_file):
         print('SKIP (not found or already fixed): irradiance dotNS fix in groundColor()')
 else:
     print('NOT FOUND: ' + irrad_mufix_file)
+
