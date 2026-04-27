@@ -153,26 +153,23 @@ else:
 # Fix 4: Discard near-black pixels in pointcloud sprite texture sampling.
 # On Apple Silicon (Metal backend), additive blending via glBlendFunc(GL_SRC_ALPHA, GL_ONE)
 # does not suppress black texels — black borders appear around galaxy images (e.g. Tully).
-# Discarding pixels whose luminance < 0.15 removes the border without affecting visible content.
-# Threshold 0.15 covers JPEG compression artifacts (dark grey ~15-40/255) around black backgrounds.
+# DeltaError=0.013 in HDR encoding means pixels with luminance < 0.013 produce negative HDR
+# values; threshold 0.05 covers that with 4x margin while preserving all visible content.
 pc_file = 'modules/base/shaders/pointcloud/pointcloud_fs.glsl'
 pc_fix_old = (
-    '  vec4 textureColor = vec4(1.0);\n'
     '  if (hasSpriteTexture) {\n'
-    '    fullColor *= texture(spriteTexture, vec3(texCoord, layer));\n'
+    '    vec4 texColor = texture(spriteTexture, vec3(in_data.texCoords, in_data.textureLayer));\n'
+    '    fullColor *= useTextureAlpha ? texColor : vec4(texColor.rgb, 1.0);\n'
     '  }'
 )
-# Discard near-black OR transparent pixels:
+# Discard near-black OR transparent pixels before blending:
 # - alpha < 0.1: catches PNGs with transparent backgrounds
-# - luminance < 0.25: catches black/dark-grey backgrounds; astronomical image sky
-#   backgrounds typically have luminance 0.15-0.25 after processing/darkening.
-# Using OR so either condition alone is sufficient.
+# - luminance < 0.05: catches black borders that produce negative HDR values via DeltaError
 pc_fix_new = (
-    '  vec4 textureColor = vec4(1.0);\n'
     '  if (hasSpriteTexture) {\n'
-    '    textureColor = texture(spriteTexture, vec3(texCoord, layer));\n'
-    '    if (textureColor.a < 0.1 || dot(textureColor.rgb, vec3(0.333)) < 0.25) discard;\n'
-    '    fullColor *= textureColor;\n'
+    '    vec4 texColor = texture(spriteTexture, vec3(in_data.texCoords, in_data.textureLayer));\n'
+    '    if (texColor.a < 0.1 || dot(texColor.rgb, vec3(0.333)) < 0.05) discard;\n'
+    '    fullColor *= useTextureAlpha ? texColor : vec4(texColor.rgb, 1.0);\n'
     '  }'
 )
 
@@ -647,4 +644,25 @@ if os.path.exists(rayorigin_file):
         print('SKIP (not found or already fixed): ray.origin from viewToObjectMatrix')
 else:
     print('NOT FOUND: ' + rayorigin_file)
+
+# Fix 16: Override DPI scaling to 1.0 in dpiscaling.asset.
+#
+# On macOS with Metal, the rendering backend already works at native Retina resolution
+# (physical pixels). The OS DPI scaling factor is 2.0 on Retina displays, but applying
+# it to GUI elements (GuiScale, FontSize) doubles them — menus and text appear 2x too
+# large. Setting scale = 1.0 bypasses this incorrect doubling.
+dpi_file = 'data/assets/util/dpiscaling.asset'
+dpi_old = '  local scale = openspace.dpiScaling()'
+dpi_new = '  local scale = 1.0  -- macOS Metal renders at native resolution; OS DPI factor already baked in'
+
+if os.path.exists(dpi_file):
+    content = open(dpi_file).read()
+    if dpi_old in content:
+        content = content.replace(dpi_old, dpi_new)
+        open(dpi_file, 'w').write(content)
+        print('FIXED DPI scaling override in ' + dpi_file)
+    else:
+        print('SKIP (not found or already fixed): DPI scaling override')
+else:
+    print('NOT FOUND: ' + dpi_file)
 
