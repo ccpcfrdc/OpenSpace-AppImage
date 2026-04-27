@@ -211,14 +211,6 @@ if [[ $apply_smart =~ ^[Yy]$ ]]; then
     print_success "Smart patches applied"
 fi
 
-if [ -f "$patches_dir/layers-fix.txt" ]; then
-    print_info "Applying layers fix..."
-    cp -v "$patches_dir/layers-fix.txt" "$openspace_path/"
-    cd "$openspace_path"
-    python3 smart_patcher.py layers-fix.txt
-    print_success "Layers fix applied"
-fi
-
 read -p "Apply single-precision patches? [Y/n]: " apply_single
 apply_single=${apply_single:-Y}
 if [[ $apply_single =~ ^[Yy]$ ]]; then
@@ -263,12 +255,7 @@ if [[ $apply_single =~ ^[Yy]$ ]]; then
         echo "Fixing: $file"
         sed -i '' 's/ghoul_assert(location != -1, "Location must not be -1");/if (location == -1){ if (_ignoreUniformLocationError){ return; }ghoul_assert(false, "Location must not be -1");return;}/g' "$file"
     done
-
-    print_info "Applying fix_ndepthmaps.py (atmosphere, shader and precision fixes)..."
-    cp -v "$patches_dir/fix_ndepthmaps.py" "$openspace_path/"
-    python3 fix_ndepthmaps.py
-    print_success "fix_ndepthmaps.py applied"
-
+    
     print_success "Single-precision patches applied"
 fi
 
