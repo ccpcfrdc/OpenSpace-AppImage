@@ -181,6 +181,11 @@ if os.path.exists(pc_file):
         print('FIXED pointcloud black border discard in ' + pc_file)
     else:
         print('SKIP (not found or already fixed): pointcloud black border discard')
+        idx = content.find('hasSpriteTexture')
+        if idx >= 0:
+            print('DEBUG pc hasSpriteTexture block: ' + repr(content[idx:idx+300]))
+        else:
+            print('DEBUG pc: hasSpriteTexture not found at all in file')
 else:
     print('NOT FOUND: ' + pc_file)
 
