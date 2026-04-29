@@ -156,20 +156,22 @@ else:
 # DeltaError=0.013 in HDR encoding means pixels with luminance < 0.013 produce negative HDR
 # values; threshold 0.05 covers that with 4x margin while preserving all visible content.
 pc_file = 'modules/base/shaders/pointcloud/pointcloud_fs.glsl'
+# Pattern matches commit 296081379b18da62686d2c0635c2478daae1b68b
 pc_fix_old = (
+    '  vec4 textureColor = vec4(1.0);\n'
     '  if (hasSpriteTexture) {\n'
-    '    vec4 texColor = texture(spriteTexture, vec3(in_data.texCoords, in_data.textureLayer));\n'
-    '    fullColor *= useTextureAlpha ? texColor : vec4(texColor.rgb, 1.0);\n'
+    '    fullColor *= texture(spriteTexture, vec3(texCoord, layer));\n'
     '  }'
 )
 # Discard near-black OR transparent pixels before blending:
 # - alpha < 0.1: catches PNGs with transparent backgrounds
 # - luminance < 0.05: catches black borders that produce negative HDR values via DeltaError
 pc_fix_new = (
+    '  vec4 textureColor = vec4(1.0);\n'
     '  if (hasSpriteTexture) {\n'
-    '    vec4 texColor = texture(spriteTexture, vec3(in_data.texCoords, in_data.textureLayer));\n'
-    '    if (texColor.a < 0.1 || dot(texColor.rgb, vec3(0.333)) < 0.05) discard;\n'
-    '    fullColor *= useTextureAlpha ? texColor : vec4(texColor.rgb, 1.0);\n'
+    '    textureColor = texture(spriteTexture, vec3(texCoord, layer));\n'
+    '    if (textureColor.a < 0.1 || dot(textureColor.rgb, vec3(0.333)) < 0.05) discard;\n'
+    '    fullColor *= textureColor;\n'
     '  }'
 )
 
@@ -181,11 +183,6 @@ if os.path.exists(pc_file):
         print('FIXED pointcloud black border discard in ' + pc_file)
     else:
         print('SKIP (not found or already fixed): pointcloud black border discard')
-        idx = content.find('hasSpriteTexture')
-        if idx >= 0:
-            print('DEBUG pc hasSpriteTexture block: ' + repr(content[idx:idx+300]))
-        else:
-            print('DEBUG pc: hasSpriteTexture not found at all in file')
 else:
     print('NOT FOUND: ' + pc_file)
 
